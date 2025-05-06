@@ -237,6 +237,9 @@ export default class BaseApp<P> extends Component<P, IState> {
             APP.store = store;
         }
 
+        // @ts-ignore
+        APP.store = store;
+
         return store;
     }
 
