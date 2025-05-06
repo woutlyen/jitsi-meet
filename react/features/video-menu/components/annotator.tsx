@@ -2,11 +2,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { Provider } from 'react-redux';
-//import store from './store'; // <-- adjust this path as needed
-import { APP } from '../../../index.web'; // adjust path
-import Whiteboard from '../../whiteboard/components/web/Whiteboard';
 
-const store = APP.store;
+import Whiteboard from '../../whiteboard/components/web/Whiteboard';
+import '../../whiteboard/reducer';
+
+import store from './store'; // <-- adjust this path as needed
+
+
 
 export function openAnnotator(containerOrId: HTMLElement | string) {
   const container =
