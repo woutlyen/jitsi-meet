@@ -21,6 +21,8 @@ import {
     isWhiteboardVisible
 } from '../../functions';
 
+import '../../css/transparent-whiteboard.css';
+
 /**
  * Space taken by meeting elements like the subject and the watermark.
  */

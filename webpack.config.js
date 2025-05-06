@@ -242,7 +242,7 @@ function getDevServerConfig() {
                 warnings: false
             }
         },
-        host: '::',
+        host: '0.0.0.0', /*host: '::',*/
         hot: true,
         proxy: [
             {

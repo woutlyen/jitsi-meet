@@ -27,6 +27,8 @@ import logger from '../../logger';
 import WhiteboardErrorDialog from './WhiteboardErrorDialog';
 import styles, { INDICATOR_COLOR } from './styles';
 
+import '../../css/transparent-whiteboard.css';
+
 interface IProps extends WithTranslation {
 
     /**

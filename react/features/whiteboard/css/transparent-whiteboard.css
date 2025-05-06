@@ -1,0 +1,8 @@
+/* Remove Excalidraw’s white paper */
+.excalidraw-wrapper .excalidraw__canvas {
+    background: transparent !important;
+  }
+  /* Keep the container transparent, too */
+  .whiteboard-container {
+    background: transparent !important;
+  }

@@ -1230,6 +1230,7 @@
     },
     "toggleTopPanelLabel": "Toggle top panel",
     "toolbar": {
+        "annotate": "Annotate",
         "Settings": "Settings",
         "accessibilityLabel": {
             "Settings": "Open settings",

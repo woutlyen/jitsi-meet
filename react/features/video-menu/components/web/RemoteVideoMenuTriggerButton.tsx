@@ -20,6 +20,8 @@ import FakeParticipantContextMenu from './FakeParticipantContextMenu';
 import ParticipantContextMenu from './ParticipantContextMenu';
 import { REMOTE_CONTROL_MENU_STATES } from './RemoteControlButton';
 
+import { openAnnotator } from '../annotator';
+import { IconEdit }       from '../../../base/icons/svg';
 /**
  * The type of the React {@code Component} props of
  * {@link RemoteVideoMenuTriggerButton}.
@@ -199,11 +201,24 @@ const RemoteVideoMenuTriggerButton = ({
             position = { _menuPosition }
             visible = { Boolean(popoverVisible) }>
             {buttonVisible && !_disabled && (
-                !isMobileBrowser() && <Button
-                    accessibilityLabel = { t('dialog.remoteUserControls', { username }) }
-                    className = { classes.triggerButton }
-                    icon = { IconDotsHorizontal }
-                    size = 'small' />
++    !isMobileBrowser() && (
+                    <>
+                        {/* 1) existing “…” menu button */}
+                        <Button
+                            accessibilityLabel = { t('dialog.remoteUserControls', { username }) }
+                            className          = { classes.triggerButton }
+                            icon               = { IconDotsHorizontal }
+                            size               = 'small' />
+            
+                        {/* 2) new “Annotate” pencil button */}
+                        <Button
+                            accessibilityLabel = { t('toolbar.annotate') }
+                            className          = { classes.triggerButton }
+                            icon               = { IconEdit }
+                            size               = 'small'
+                            onClick            = { () => openAnnotator(participantID) } />
+                    </>
+                )
             )}
         </Popover>
     );
