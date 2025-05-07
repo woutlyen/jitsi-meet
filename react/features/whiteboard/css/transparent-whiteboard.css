@@ -1,8 +1,30 @@
 /* Remove Excalidraw’s white paper */
-.excalidraw-wrapper .excalidraw__canvas {
-    background: transparent !important;
+/* Excalidraw canvas and containers */
+.whiteboard-container,
+.excalidraw-wrapper,
+.excalidraw,
+.excalidraw .App,
+.excalidraw .excalidraw-canvasContainer,
+.excalidraw .excalidraw-canvas {
+    background-color: transparent !important;
+}
+
+/* Force the <canvas> background transparent */
+.excalidraw-wrapper canvas,
+.whiteboard-container .excalidraw__canvas {
+  background-color: transparent !important;
+}
+
+/* Hide any extra white <div> layers */
+.excalidraw-wrapper > div,
+.excalidraw-wrapper .excalidraw__container {
+  background: transparent !important;
+}
+
+/* Override Excalidraw theme variables */
+.excalidraw-wrapper .excalidraw {
+    --canvas-background: transparent;
+    --view-background:   transparent;
   }
-  /* Keep the container transparent, too */
-  .whiteboard-container {
-    background: transparent !important;
-  }
+
+  

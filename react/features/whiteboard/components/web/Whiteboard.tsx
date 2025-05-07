@@ -151,7 +151,16 @@ const Whiteboard = (props: WithTranslation): JSX.Element => {
                                 // @ts-ignore
                                 ref: excalidrawRef,
                                 theme: 'light',
-                                UIOptions: WHITEBOARD_UI_OPTIONS
+                                UIOptions: WHITEBOARD_UI_OPTIONS,
+                                initialData: {
+                                    elements:  [{
+                                        "backgroundColor": "transparent",}],
+                                    appState: {
+                                        viewBackgroundColor: 'transparent',
+                                        currentItemFontFamily: 1,
+                                        currentItemStrokeColor: '#000000',
+                                    }
+                                }
                             }}
                             getCollabAPI = { getCollabAPI }
                             getExcalidrawAPI = { getExcalidrawAPI } />
