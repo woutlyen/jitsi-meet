@@ -7,6 +7,8 @@ TF_WASM_DIR = node_modules/@tensorflow/tfjs-backend-wasm/dist/
 RNNOISE_WASM_DIR = node_modules/@jitsi/rnnoise-wasm/dist
 EXCALIDRAW_DIR = node_modules/@jitsi/excalidraw/dist/excalidraw-assets
 EXCALIDRAW_DIR_DEV = node_modules/@jitsi/excalidraw/dist/excalidraw-assets-dev
+EXCALIDRAW_DIR2 = node_modules/@excalidraw/excalidraw/dist/prod/
+EXCALIDRAW_DIR_DEV2 = node_modules/@excalidraw/excalidraw/dist/dev/
 TFLITE_WASM = react/features/stream-effects/virtual-background/vendor/tflite
 MEET_MODELS_DIR  = react/features/stream-effects/virtual-background/vendor/models
 FACE_MODELS_DIR = node_modules/@vladmandic/human-models/models
@@ -34,7 +36,7 @@ clean:
 	rm -fr $(BUILD_DIR)
 
 .NOTPARALLEL:
-deploy: deploy-init deploy-appbundle deploy-rnnoise-binary deploy-excalidraw deploy-tflite deploy-meet-models deploy-lib-jitsi-meet deploy-olm deploy-tf-wasm deploy-css deploy-local deploy-face-landmarks
+deploy: deploy-init deploy-appbundle deploy-rnnoise-binary deploy-excalidraw deploy-excalidraw2 deploy-tflite deploy-meet-models deploy-lib-jitsi-meet deploy-olm deploy-tf-wasm deploy-css deploy-local deploy-face-landmarks
 
 deploy-init:
 	rm -fr $(DEPLOY_DIR)
@@ -95,6 +97,16 @@ deploy-excalidraw-dev:
 		$(EXCALIDRAW_DIR_DEV) \
 		$(DEPLOY_DIR)/
 
+deploy-excalidraw2:
+	cp -R \
+		$(EXCALIDRAW_DIR2) \
+		$(DEPLOY_DIR)/
+
+deploy-excalidraw-dev2:
+	cp -R \
+		$(EXCALIDRAW_DIR_DEV2) \
+		$(DEPLOY_DIR)/
+
 deploy-meet-models:
 	cp \
 		$(MEET_MODELS_DIR)/*.tflite \
@@ -117,7 +129,7 @@ deploy-local:
 	([ ! -x deploy-local.sh ] || ./deploy-local.sh)
 
 .NOTPARALLEL:
-dev: deploy-init deploy-css deploy-rnnoise-binary deploy-tflite deploy-meet-models deploy-lib-jitsi-meet deploy-olm deploy-tf-wasm deploy-excalidraw-dev deploy-face-landmarks
+dev: deploy-init deploy-css deploy-rnnoise-binary deploy-tflite deploy-meet-models deploy-lib-jitsi-meet deploy-olm deploy-tf-wasm deploy-excalidraw-dev deploy-excalidraw-dev2 deploy-face-landmarks
 	$(WEBPACK_DEV_SERVER)
 
 source-package: compile deploy

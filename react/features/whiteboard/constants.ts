@@ -19,6 +19,7 @@ export const WHITEBOARD_UI_OPTIONS = {
         allowedShortcuts: [
             'cut', 'deleteSelectedElements', 'redo', 'selectAll', 'undo'
         ],
+        changeViewBackgroundColor: false,
         disableAlignItems: true,
         disableFileDrop: true,
         disableGrouping: true,

@@ -197,7 +197,10 @@ function getConfig(options = {}) {
         ].filter(Boolean),
         resolve: {
             alias: {
-                'focus-visible': 'focus-visible/dist/focus-visible.min.js'
+                'focus-visible': 'focus-visible/dist/focus-visible.min.js',
+                'roughjs/bin/rough': 'roughjs/bin/rough.js',
+                'roughjs/bin/math': 'roughjs/bin/math.js',
+                'roughjs/bin/generator': 'roughjs/bin/generator.js',
             },
             aliasFields: [
                 'browser'

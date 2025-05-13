@@ -1,21 +1,30 @@
 // annotator.tsx
+declare global {
+  interface Window {
+    EXCALIDRAW_ASSET_PATH: string;
+  }
+}
+
+// Set the asset path before importing Excalidraw
+//window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/';
+window.EXCALIDRAW_ASSET_PATH = '/libs/dev/'
+
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { Provider } from 'react-redux';
 
 import Whiteboard from '../../whiteboard/components/web/Whiteboard';
-import { ExcalidrawApp } from '@jitsi/excalidraw';
+import { Excalidraw } from '@excalidraw/excalidraw';
 import { WHITEBOARD_UI_OPTIONS } from '../../whiteboard/constants';
 
-//import '../../whiteboard/reducer';
-//import '../../base/participants/reducer';
-
-//import store from './store'; // <-- adjust this path as needed
+declare global {
+  interface Window { APP: any; }
+}
 
 function waitForAppStore(timeout = 5000): Promise<any> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
-    const check = () => {
+    (function check() {
       const store = window.APP?.store;
       if (store) {
         resolve(store);
@@ -24,37 +33,58 @@ function waitForAppStore(timeout = 5000): Promise<any> {
       } else {
         requestAnimationFrame(check);
       }
-    };
-    check();
+    })();
   });
 }
 
 export function openAnnotator(containerOrId: HTMLElement | string) {
-  //const container =
-  //  typeof containerOrId === 'string'
-  //    ? document.getElementById(`participant_${containerOrId}`)
-  //    : containerOrId;
-
-  const container = document.getElementById(`largeVideoWrapper`);
-
+  const container = typeof containerOrId === 'string'
+    ? document.getElementById(`largeVideoWrapper`)
+    : containerOrId;
 
   if (!container || (container as any)._annotatorMounted) return;
   (container as any)._annotatorMounted = true;
 
-  const overlay = document.createElement('div');
-  Object.assign(overlay.style, {
-    position: 'absolute',
-    top: '0',
-    left: '0',
-    width: '100%',
-    height: '100%',
-    zIndex: '9999',
-    pointerEvents: 'auto',
-    display: 'block',
-    opacity: '50%',
-    backgroundColor: 'transparent'
-  });
+  // find the <video> inside
+  const videoEl = container.querySelector('video');
+  if (!videoEl) {
+    console.warn('No <video> found inside container');
+    return;
+  }
 
+  // create overlay
+  const overlay = document.createElement('div');
+  overlay.style.position       = 'absolute';
+  overlay.style.pointerEvents  = 'auto';
+  overlay.style.backgroundColor= 'transparent';
+  overlay.style.zIndex         = '9999';
+  overlay.style.overflow       = 'visible';
+
+  // append before sizing so it participates in layout if needed
+  container.appendChild(overlay);
+  if (getComputedStyle(container).position === 'static') {
+    container.style.position = 'relative';
+  }
+
+  // Function to size & position overlay to match video
+  function updateOverlay() {
+    const cRect = container.getBoundingClientRect();    // ← container, not video
+    const vRect = videoEl.getBoundingClientRect();
+    overlay.style.left   = `${vRect.left - cRect.left}px`;
+    overlay.style.top    = `${vRect.top  - cRect.top }px`;
+    overlay.style.width  = `${vRect.width}px`;
+    overlay.style.height = `${vRect.height}px`;
+  }
+
+  // initial
+  updateOverlay();
+
+  // watch for resize
+  const ro = new ResizeObserver(updateOverlay);
+  ro.observe(videoEl);
+  window.addEventListener('resize', updateOverlay);
+
+  // close button
   const closeBtn = document.createElement('button');
   closeBtn.textContent = '✕';
   Object.assign(closeBtn.style, {
@@ -66,40 +96,14 @@ export function openAnnotator(containerOrId: HTMLElement | string) {
   closeBtn.onclick = () => {
     ReactDOM.unmountComponentAtNode(overlay);
     overlay.remove();
+    //ro.disconnect();
+    //window.removeEventListener('resize', updateOverlay);
     (container as any)._annotatorMounted = false;
   };
   overlay.appendChild(closeBtn);
 
-  if (getComputedStyle(container).position === 'static') {
-    container.style.position = 'relative';
-  }
-
-  container.appendChild(overlay);
-/*
-  waitForAppStore().then(store => {
-    ReactDOM.render(
-      <Provider store={store}>
-        <Whiteboard />
-      </Provider>,
-      overlay
-    );
-  }).catch(err => {
-    console.error('Failed to load APP.store:', err);
-  });
-}
-*/
-
   const style = document.createElement('style');
-  style.textContent = 
-    `.excalidraw,
-    .excalidraw-wrapper,
-    .excalidraw .excalidraw-canvas,
-    .excalidraw-container,
-    .excalidraw .layer-ui__wrapper,
-    .excalidraw .scroll-container {
-      background-color: transparent !important;
-    }
-
+  style.textContent = `
     .excalidraw .layer-ui__wrapper {
       position: absolute !important;
       top: 0 !important;
@@ -110,28 +114,56 @@ export function openAnnotator(containerOrId: HTMLElement | string) {
     }`;
   document.head.appendChild(style);
 
-
-  waitForAppStore().then(store => {
-    ReactDOM.render(
-      <Provider store={store}>
-        <ExcalidrawApp
-          collabDetails={undefined} // or skip this entirely
-          collabServerUrl={undefined}
-          excalidraw={{
-            isCollaborating: false, // disable collaboration
-            theme: 'light',
-            UIOptions: WHITEBOARD_UI_OPTIONS,
-            initialData: {
-              appState: {
-                viewBackgroundColor: 'transparent'
-              }
-            }
-          }}
-        />
-      </Provider>,
-      overlay
-    );
-  }).catch(err => {
-    console.error('Failed to load APP.store:', err);
+  const wrapper = document.createElement('div');
+  Object.assign(wrapper.style, {
+    width: '100%',
+    height: '100%',
+    position: 'relative'
   });
-} 
+  overlay.appendChild(wrapper);
+
+  // render whiteboard
+  waitForAppStore()
+    .then(store => {
+      ReactDOM.render(
+        <Provider store={store}>
+          <Excalidraw
+            isCollaborating={true}
+            theme="light"
+            initialData={{
+              elements: [],
+              appState: {
+                viewBackgroundColor: 'transparent',
+                offsetLeft: 0,
+                offsetTop: 0,
+                zoom: { value: 1 } as any
+              }
+            }}
+            UIOptions={WHITEBOARD_UI_OPTIONS}
+          />
+        </Provider>,
+        wrapper
+      );
+
+      // === POST-RENDER FIX: hoist static canvas out of its wrapper ===
+      // Observe changes in the wrapper DOM to catch when the canvas gets mounted
+      const observer = new MutationObserver(() => {
+        const canvasWrapper = wrapper.querySelector('.excalidraw__canvas-wrapper');
+        const staticCanvas = canvasWrapper?.querySelector('canvas.excalidraw__canvas.static');
+
+        if (canvasWrapper && staticCanvas && canvasWrapper.parentElement) {
+          // Move static canvas out and remove wrapper
+          canvasWrapper.parentElement.insertBefore(staticCanvas, canvasWrapper);
+          canvasWrapper.remove();
+          observer.disconnect(); // Stop observing once done
+        }
+      });
+
+      // Start observing for DOM changes inside wrapper
+      observer.observe(wrapper, {
+        childList: true,
+        subtree: true,
+      });
+    })
+    .catch(err => console.error(err));
+}
