@@ -106,11 +106,13 @@ export function openAnnotator(containerOrId: HTMLElement | string) {
   style.textContent = `
     .excalidraw .layer-ui__wrapper {
       position: absolute !important;
-      top: 0 !important;
+      top: 50% !important;
       left: 50% !important;
-      transform: translateX(-50%) !important;
-      width: 100vw !important;
+      transform: translate(-50%, -50%) !important;
+      width: 100% !important;
+      max-width: 100vw !important;
       height: 100% !important;
+      max-height: 100vh !important;
     }`;
   document.head.appendChild(style);
 
