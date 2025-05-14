@@ -34,26 +34,6 @@ function waitForAppStore(timeout = 5000): Promise<any> {
   });
 }
 
-// Merge elements by ID/version
-function mergeElements(remote: any[], local: any[]): any[] {
-  const localMap = new Map(local.map((el) => [el.id, el]));
-  const merged = [...local];
-
-  for (const remoteEl of remote) {
-    const localEl = localMap.get(remoteEl.id);
-    if (!localEl || remoteEl.version > localEl.version) {
-      const index = merged.findIndex((e) => e.id === remoteEl.id);
-      if (index !== -1) {
-        merged[index] = remoteEl;
-      } else {
-        merged.push(remoteEl);
-      }
-    }
-  }
-
-  return merged;
-}
-
 function WhiteboardCollaborator({ store }: { store: any }) {
   const excalRef = useRef<any>(null);
   const elementMapRef = useRef<Map<string, any>>(new Map());
@@ -66,7 +46,7 @@ function WhiteboardCollaborator({ store }: { store: any }) {
     const payload = {
       type: 'sync',
       clientId,
-      elements: Array.from(elementMapRef.current.values()),
+      elements: Array.from(elementMapRef.current.values())
     };
 
     if (socket.readyState === WebSocket.OPEN) {
@@ -81,13 +61,23 @@ function WhiteboardCollaborator({ store }: { store: any }) {
         if (data.type === 'sync' && data.clientId !== clientId) {
           for (const incomingEl of data.elements) {
             const existing = elementMapRef.current.get(incomingEl.id);
+
             if (!existing || incomingEl.version > existing.version) {
-              elementMapRef.current.set(incomingEl.id, incomingEl);
+              elementMapRef.current.set(incomingEl.id, incomingEl); // Store all, even deleted
             }
           }
 
           const mergedElements = Array.from(elementMapRef.current.values());
+
+          // Sync all (including deleted) with Excalidraw
           excalRef.current?.updateScene({ elements: mergedElements });
+
+          // Optional: clean up internal store after rendering
+          for (const el of mergedElements) {
+            if (el.isDeleted) {
+              elementMapRef.current.delete(el.id);
+            }
+          }
         }
       } catch (e) {
         console.warn('Invalid WS message', e);
@@ -96,6 +86,16 @@ function WhiteboardCollaborator({ store }: { store: any }) {
 
     socket.addEventListener('message', handleMessage);
     return () => socket.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    // Delay broadcast to allow canvas to fully initialize
+    const timeout = setTimeout(() => {
+      const elements = excalRef.current?.getSceneElements() || [];
+      broadcastElements(elements); // Initial full sync broadcast
+    }, 1000); // adjust if needed
+
+    return () => clearTimeout(timeout);
   }, []);
 
   const broadcastInterval = useRef<NodeJS.Timeout | null>(null);
