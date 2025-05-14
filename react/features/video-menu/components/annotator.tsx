@@ -56,22 +56,17 @@ function mergeElements(remote: any[], local: any[]): any[] {
 
 function WhiteboardCollaborator({ store }: { store: any }) {
   const excalRef = useRef<any>(null);
-  const lastSentElementsRef = useRef<any[]>([]);
+  const elementMapRef = useRef<Map<string, any>>(new Map());
 
-  const broadcastElements = useCallback((elements: readonly any[]) => {
-    const cloned = elements.map((el) => ({ ...el }));
-
-    // Only broadcast if something changed
-    const hasChanged = JSON.stringify(cloned) !== JSON.stringify(lastSentElementsRef.current);
-    if (!hasChanged) return;
-
-    lastSentElementsRef.current = cloned;
-    console.log('[SEND]', clientId, cloned);
+  const broadcastElements = useCallback((newElements: readonly any[]) => {
+    for (const el of newElements) {
+      elementMapRef.current.set(el.id, el);
+    }
 
     const payload = {
       type: 'sync',
       clientId,
-      elements: cloned
+      elements: Array.from(elementMapRef.current.values()),
     };
 
     if (socket.readyState === WebSocket.OPEN) {
@@ -84,11 +79,18 @@ function WhiteboardCollaborator({ store }: { store: any }) {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'sync' && data.clientId !== clientId) {
-          console.log('[RECV]', data.clientId, data.elements);
+          const incomingMap = new Map<string, any>();
+          for (const el of data.elements) {
+            incomingMap.set(el.id, el);
+          }
 
-          const current = excalRef.current?.getSceneElements() || [];
-          const merged = mergeElements(data.elements, current);
-          excalRef.current?.updateScene({ elements: merged });
+          // Merge incoming into local element map
+          for (const [id, el] of incomingMap.entries()) {
+            elementMapRef.current.set(id, el);
+          }
+
+          const mergedElements = Array.from(elementMapRef.current.values());
+          excalRef.current?.updateScene({ elements: mergedElements });
         }
       } catch (e) {
         console.warn('Invalid WS message', e);
@@ -98,6 +100,26 @@ function WhiteboardCollaborator({ store }: { store: any }) {
     socket.addEventListener('message', handleMessage);
     return () => socket.removeEventListener('message', handleMessage);
   }, []);
+
+  const broadcastInterval = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePointerDown = () => {
+    if (broadcastInterval.current) return;
+    broadcastInterval.current = setInterval(() => {
+      const elements = excalRef.current?.getSceneElements() || [];
+      broadcastElements(elements);
+    }, 100);
+  };
+
+  const handlePointerUp = () => {
+    if (broadcastInterval.current) {
+      clearInterval(broadcastInterval.current);
+      broadcastInterval.current = null;
+    }
+
+    const elements = excalRef.current?.getSceneElements() || [];
+    broadcastElements(elements); // Final broadcast
+  };
 
   return (
     <Provider store={store}>
@@ -117,11 +139,13 @@ function WhiteboardCollaborator({ store }: { store: any }) {
           }
         }}
         UIOptions={WHITEBOARD_UI_OPTIONS}
-        onPointerUp={() => {
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        /*onPointerUp={() => {
           const elements = excalRef.current?.getSceneElements() || [];
           broadcastElements(elements);
         }}
-        /*onChange={(elements) => {
+        onChange={(elements) => {
           broadcastElements(elements);
         }}*/
       />
