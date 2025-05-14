@@ -37,12 +37,54 @@ function waitForAppStore(timeout = 5000): Promise<any> {
 function WhiteboardCollaborator({ store }: { store: any }) {
   const excalRef = useRef<any>(null);
   const elementMapRef = useRef<Map<string, any>>(new Map());
-  const [remoteCursors, setRemoteCursors] = React.useState<{
-    [clientId: string]: { x: number; y: number; name: string };
-  }>({});
   const containerRef = useRef<HTMLDivElement>(null);
+  const [, forceUpdate] = React.useState({});
 
-  const userName = "User-" + clientId.slice(0, 4); // Customize naming if needed
+  //const userName = "User-" + clientId.slice(0, 4); // Customize naming if needed
+
+  const getUserName = () => {
+    const el = document.getElementById('localDisplayName');
+    if (el && el.textContent?.trim()) {
+      if (el.textContent.trim() !== "me") {
+        return el.textContent.trim();
+      }
+    }
+    return `User-${clientId.slice(0, 4)}`;
+  };
+
+  const cursorsRef = useRef<Map<string, { x: number, y: number, name: string, color: string }>>(new Map());
+  const timeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const userColorsRef = useRef<Map<string, string>>(new Map());
+
+  const getRandomColor = () => {
+    const colors = ['#c8a094', '#91dc90', '#b5c3fa', '#a190ff', '#e2c0ff', '#a6eccd', '#fd8794', '#f7cf83', '#ff88c6', '#908793', '#f1e983', '#9cb2dd'];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+
+  const renderRemoteCursors = () => {
+    return Array.from(cursorsRef.current.entries()).map(([id, cursor]) => (
+      <div
+        key={id}
+        style={{
+          position: 'absolute',
+          left: cursor.x,
+          top: cursor.y,
+          transform: 'translate(-50%, -50%)',
+          pointerEvents: 'none',
+          background: cursor.color,
+          color: '#000',
+          padding: '2px 6px',
+          fontSize: '12px',
+          borderRadius: '4px',
+          zIndex: 9999,
+          boxShadow: '0 0 4px rgba(0, 0, 0, 0.3)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {cursor.name}
+      </div>
+    ));
+  };
 
   const broadcastElements = useCallback((newElements: readonly any[]) => {
     for (const el of newElements) {
@@ -64,7 +106,7 @@ function WhiteboardCollaborator({ store }: { store: any }) {
     const payload = {
       type: 'cursor',
       clientId,
-      name: userName,
+      name: getUserName(),
       x,
       y,
     };
@@ -95,10 +137,29 @@ function WhiteboardCollaborator({ store }: { store: any }) {
         const data = JSON.parse(event.data);
 
         if (data.type === 'cursor' && data.clientId !== clientId) {
-          setRemoteCursors(prev => ({
-            ...prev,
-            [data.clientId]: { x: data.x, y: data.y, name: data.name }
-          }));
+          const { x, y, name, clientId: senderId } = data;
+
+          if (!userColorsRef.current.has(senderId)) {
+            userColorsRef.current.set(senderId, getRandomColor());
+          }
+
+          cursorsRef.current.set(senderId, {
+            x,
+            y,
+            name,
+            color: userColorsRef.current.get(senderId)!
+          });
+
+          if (timeoutsRef.current.has(senderId)) {
+            clearTimeout(timeoutsRef.current.get(senderId)!);
+          }
+
+          timeoutsRef.current.set(senderId, setTimeout(() => {
+            cursorsRef.current.delete(senderId);
+            forceUpdate({});
+          }, 3000));
+
+          forceUpdate({});
           return;
         }
 
@@ -165,29 +226,6 @@ function WhiteboardCollaborator({ store }: { store: any }) {
 
     const elements = excalRef.current?.getSceneElements() || [];
     broadcastElements(elements);
-  };
-
-  const renderRemoteCursors = () => {
-    return Object.entries(remoteCursors).map(([id, cursor]) => (
-      <div
-        key={id}
-        style={{
-          position: 'absolute',
-          left: cursor.x,
-          top: cursor.y,
-          transform: 'translate(-50%, -50%)',
-          pointerEvents: 'none',
-          background: 'rgba(0, 0, 0, 0.7)',
-          color: '#fff',
-          padding: '2px 6px',
-          fontSize: '12px',
-          borderRadius: '4px',
-          zIndex: 9999,
-        }}
-      >
-        {cursor.name}
-      </div>
-    ));
   };
 
   return (
