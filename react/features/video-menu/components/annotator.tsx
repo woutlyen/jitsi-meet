@@ -79,14 +79,11 @@ function WhiteboardCollaborator({ store }: { store: any }) {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'sync' && data.clientId !== clientId) {
-          const incomingMap = new Map<string, any>();
-          for (const el of data.elements) {
-            incomingMap.set(el.id, el);
-          }
-
-          // Merge incoming into local element map
-          for (const [id, el] of incomingMap.entries()) {
-            elementMapRef.current.set(id, el);
+          for (const incomingEl of data.elements) {
+            const existing = elementMapRef.current.get(incomingEl.id);
+            if (!existing || incomingEl.version > existing.version) {
+              elementMapRef.current.set(incomingEl.id, incomingEl);
+            }
           }
 
           const mergedElements = Array.from(elementMapRef.current.values());
@@ -141,11 +138,14 @@ function WhiteboardCollaborator({ store }: { store: any }) {
         UIOptions={WHITEBOARD_UI_OPTIONS}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
-        /*onPointerUp={() => {
-          const elements = excalRef.current?.getSceneElements() || [];
-          broadcastElements(elements);
+        onPaste={(data, event) => {
+          requestAnimationFrame(() => {
+            const elements = excalRef.current?.getSceneElements() || [];
+            broadcastElements(elements); // Broadcast after paste
+          }); 
+          return true;
         }}
-        onChange={(elements) => {
+        /*onChange={(elements) => {
           broadcastElements(elements);
         }}*/
       />
