@@ -102,6 +102,47 @@ function WhiteboardCollaborator({ store }: { store: any }) {
     }
   }, []);
 
+  // Ref to store the previous count of deleted elements
+  const deletedCountRef = useRef(0);
+
+  // The handleChange function will be updated to check for changes in the deleted count
+  const handleChange = useCallback(
+    (elements: readonly any[], appState: any) => {
+      // Count how many elements are deleted
+      const deletedElements = elements.filter(el => el.isDeleted);
+      const currentDeletedCount = deletedElements.length;
+
+      // Only broadcast if there are more deleted elements than the previous time
+      if (currentDeletedCount > deletedCountRef.current) {
+        // Update the elementMapRef with the new element state
+        elements.forEach((el) => {
+          if (!el.isDeleted) {
+            // If element is not deleted, we either add or update it
+            elementMapRef.current.set(el.id, el);
+          } else {
+            // If element is deleted, we mark it and don't add it to the map
+            elementMapRef.current.set(el.id, { ...el, isDeleted: true });
+          }
+        });
+
+        // Broadcast the updated state to other clients
+        const payload = {
+          type: 'sync',
+          clientId,
+          elements: Array.from(elementMapRef.current.values()),
+        };
+
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify(payload));
+        }
+
+        // Update the previous count of deleted elements
+        deletedCountRef.current = currentDeletedCount;
+      }
+    },
+    []
+  );
+
   const broadcastCursor = useCallback((x: number, y: number) => {
     const payload = {
       type: 'cursor',
@@ -185,11 +226,6 @@ function WhiteboardCollaborator({ store }: { store: any }) {
           const mergedElements = Array.from(elementMapRef.current.values());
           excalRef.current?.updateScene({ elements: mergedElements });
 
-          for (const el of mergedElements) {
-            if (el.isDeleted) {
-              elementMapRef.current.delete(el.id);
-            }
-          }
         }
       } catch (e) {
         console.warn('Invalid WS message', e);
@@ -256,6 +292,7 @@ function WhiteboardCollaborator({ store }: { store: any }) {
             });
             return true;
           }}
+          onChange={handleChange} // Use the handleChange to track deletions
         />
         {renderRemoteCursors()}
       </div>
