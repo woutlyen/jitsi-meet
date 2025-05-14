@@ -37,6 +37,12 @@ function waitForAppStore(timeout = 5000): Promise<any> {
 function WhiteboardCollaborator({ store }: { store: any }) {
   const excalRef = useRef<any>(null);
   const elementMapRef = useRef<Map<string, any>>(new Map());
+  const [remoteCursors, setRemoteCursors] = React.useState<{
+    [clientId: string]: { x: number; y: number; name: string };
+  }>({});
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const userName = "User-" + clientId.slice(0, 4); // Customize naming if needed
 
   const broadcastElements = useCallback((newElements: readonly any[]) => {
     for (const el of newElements) {
@@ -54,13 +60,49 @@ function WhiteboardCollaborator({ store }: { store: any }) {
     }
   }, []);
 
+  const broadcastCursor = useCallback((x: number, y: number) => {
+    const payload = {
+      type: 'cursor',
+      clientId,
+      name: userName,
+      x,
+      y,
+    };
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(payload));
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      broadcastCursor(x, y);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, [broadcastCursor]);
+
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
 
+        if (data.type === 'cursor' && data.clientId !== clientId) {
+          setRemoteCursors(prev => ({
+            ...prev,
+            [data.clientId]: { x: data.x, y: data.y, name: data.name }
+          }));
+          return;
+        }
+
         if (data.type === 'init') {
-          // Received initial full scene from server
           for (const el of data.elements) {
             elementMapRef.current.set(el.id, el);
           }
@@ -75,16 +117,13 @@ function WhiteboardCollaborator({ store }: { store: any }) {
             const existing = elementMapRef.current.get(incomingEl.id);
 
             if (!existing || incomingEl.version > existing.version) {
-              elementMapRef.current.set(incomingEl.id, incomingEl); // Store all, even deleted
+              elementMapRef.current.set(incomingEl.id, incomingEl);
             }
           }
 
           const mergedElements = Array.from(elementMapRef.current.values());
-
-          // Sync all (including deleted) with Excalidraw
           excalRef.current?.updateScene({ elements: mergedElements });
 
-          // Optional: clean up internal store after rendering
           for (const el of mergedElements) {
             if (el.isDeleted) {
               elementMapRef.current.delete(el.id);
@@ -101,12 +140,10 @@ function WhiteboardCollaborator({ store }: { store: any }) {
   }, []);
 
   useEffect(() => {
-    // Delay broadcast to allow canvas to fully initialize
     const timeout = setTimeout(() => {
       const elements = excalRef.current?.getSceneElements() || [];
-      broadcastElements(elements); // Initial full sync broadcast
-    }, 1000); // adjust if needed
-
+      broadcastElements(elements);
+    }, 1000);
     return () => clearTimeout(timeout);
   }, []);
 
@@ -127,40 +164,63 @@ function WhiteboardCollaborator({ store }: { store: any }) {
     }
 
     const elements = excalRef.current?.getSceneElements() || [];
-    broadcastElements(elements); // Final broadcast
+    broadcastElements(elements);
+  };
+
+  const renderRemoteCursors = () => {
+    return Object.entries(remoteCursors).map(([id, cursor]) => (
+      <div
+        key={id}
+        style={{
+          position: 'absolute',
+          left: cursor.x,
+          top: cursor.y,
+          transform: 'translate(-50%, -50%)',
+          pointerEvents: 'none',
+          background: 'rgba(0, 0, 0, 0.7)',
+          color: '#fff',
+          padding: '2px 6px',
+          fontSize: '12px',
+          borderRadius: '4px',
+          zIndex: 9999,
+        }}
+      >
+        {cursor.name}
+      </div>
+    ));
   };
 
   return (
     <Provider store={store}>
-      <Excalidraw
-        excalidrawAPI={(api) => {
-          excalRef.current = api;
-        }}
-        isCollaborating={true}
-        theme="light"
-        initialData={{
-          elements: [],
-          appState: {
-            viewBackgroundColor: 'transparent',
-            offsetLeft: 0,
-            offsetTop: 0,
-            zoom: { value: 1 } as any
-          }
-        }}
-        UIOptions={WHITEBOARD_UI_OPTIONS}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPaste={(data, event) => {
-          requestAnimationFrame(() => {
-            const elements = excalRef.current?.getSceneElements() || [];
-            broadcastElements(elements); // Broadcast after paste
-          }); 
-          return true;
-        }}
-        /*onChange={(elements) => {
-          broadcastElements(elements);
-        }}*/
-      />
+      <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+        <Excalidraw
+          excalidrawAPI={(api) => {
+            excalRef.current = api;
+          }}
+          isCollaborating={true}
+          theme="light"
+          initialData={{
+            elements: [],
+            appState: {
+              viewBackgroundColor: 'transparent',
+              offsetLeft: 0,
+              offsetTop: 0,
+              zoom: { value: 1 } as any,
+            },
+          }}
+          UIOptions={WHITEBOARD_UI_OPTIONS}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPaste={(data, event) => {
+            requestAnimationFrame(() => {
+              const elements = excalRef.current?.getSceneElements() || [];
+              broadcastElements(elements);
+            });
+            return true;
+          }}
+        />
+        {renderRemoteCursors()}
+      </div>
     </Provider>
   );
 }
