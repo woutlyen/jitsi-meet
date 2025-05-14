@@ -5,13 +5,15 @@ declare global {
   }
 }
 
-// Set the asset path before importing Excalidraw
-//window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/';
-window.EXCALIDRAW_ASSET_PATH = '/libs/dev/'
+const clientId = crypto.randomUUID();
+const socket = new WebSocket('ws://localhost:1234');
 
-import React from 'react';
+window.EXCALIDRAW_ASSET_PATH = '/libs/dev/';
+
+import React, { useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Provider } from 'react-redux';
+import throttle from 'lodash.throttle'; // ✅ Throttle broadcast to avoid spamming
 
 import Whiteboard from '../../whiteboard/components/web/Whiteboard';
 import { Excalidraw } from '@excalidraw/excalidraw';
@@ -37,6 +39,75 @@ function waitForAppStore(timeout = 5000): Promise<any> {
   });
 }
 
+function WhiteboardCollaborator({ store }: { store: any }) {
+  const excalRef = useRef<any>(null);
+
+  // ✅ Broadcast safely and throttled
+  const broadcastElements = useCallback(throttle((elements: readonly any[]) => {
+    const clonedElements = elements.map(el => ({ ...el })); // ✅ Clone to avoid readonly issues
+
+    console.log('[SEND]', clientId, clonedElements); // ✅ Logging
+
+    const payload = {
+      type: 'sync',
+      clientId,
+      elements: clonedElements
+    };
+
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(payload));
+    }
+  }, 100), []);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'sync' && data.clientId !== clientId) {
+          console.log('[RECV]', clientId, '<--', data.clientId, data.elements); // ✅ Logging
+
+          if (excalRef.current) {
+            excalRef.current.updateScene({
+              elements: data.elements.map(el => ({ ...el })) // ✅ Defensive clone
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Invalid WS message', e);
+      }
+    };
+
+    socket.addEventListener('message', handleMessage);
+    return () => socket.removeEventListener('message', handleMessage);
+  }, []);
+
+  return (
+    <Provider store={store}>
+      <Excalidraw
+        excalidrawAPI={(api) => {
+          excalRef.current = api;
+        }}
+        isCollaborating={true}
+        theme="light"
+        initialData={{
+          elements: [],
+          appState: {
+            viewBackgroundColor: 'transparent',
+            offsetLeft: 0,
+            offsetTop: 0,
+            zoom: { value: 1 } as any
+          }
+        }}
+        UIOptions={WHITEBOARD_UI_OPTIONS}
+        onChange={(elements) => {
+          broadcastElements(elements);
+        }}
+      />
+    </Provider>
+  );
+}
+
 export function openAnnotator(containerOrId: HTMLElement | string) {
   const container = typeof containerOrId === 'string'
     ? document.getElementById(`largeVideoWrapper`)
@@ -45,46 +116,39 @@ export function openAnnotator(containerOrId: HTMLElement | string) {
   if (!container || (container as any)._annotatorMounted) return;
   (container as any)._annotatorMounted = true;
 
-  // find the <video> inside
   const videoEl = container.querySelector('video');
   if (!videoEl) {
     console.warn('No <video> found inside container');
     return;
   }
 
-  // create overlay
   const overlay = document.createElement('div');
-  overlay.style.position       = 'absolute';
-  overlay.style.pointerEvents  = 'auto';
-  overlay.style.backgroundColor= 'transparent';
-  overlay.style.zIndex         = '9999';
-  overlay.style.overflow       = 'visible';
+  overlay.style.position = 'absolute';
+  overlay.style.pointerEvents = 'auto';
+  overlay.style.backgroundColor = 'transparent';
+  overlay.style.zIndex = '9999';
+  overlay.style.overflow = 'visible';
 
-  // append before sizing so it participates in layout if needed
   container.appendChild(overlay);
   if (getComputedStyle(container).position === 'static') {
     container.style.position = 'relative';
   }
 
-  // Function to size & position overlay to match video
   function updateOverlay() {
-    const cRect = container.getBoundingClientRect();    // ← container, not video
+    const cRect = container.getBoundingClientRect();
     const vRect = videoEl.getBoundingClientRect();
-    overlay.style.left   = `${vRect.left - cRect.left}px`;
-    overlay.style.top    = `${vRect.top  - cRect.top }px`;
-    overlay.style.width  = `${vRect.width}px`;
+    overlay.style.left = `${vRect.left - cRect.left}px`;
+    overlay.style.top = `${vRect.top - cRect.top}px`;
+    overlay.style.width = `${vRect.width}px`;
     overlay.style.height = `${vRect.height}px`;
   }
 
-  // initial
   updateOverlay();
 
-  // watch for resize
   const ro = new ResizeObserver(updateOverlay);
   ro.observe(videoEl);
   window.addEventListener('resize', updateOverlay);
 
-  // close button
   const closeBtn = document.createElement('button');
   closeBtn.textContent = '✕';
   Object.assign(closeBtn.style, {
@@ -96,8 +160,6 @@ export function openAnnotator(containerOrId: HTMLElement | string) {
   closeBtn.onclick = () => {
     ReactDOM.unmountComponentAtNode(overlay);
     overlay.remove();
-    //ro.disconnect();
-    //window.removeEventListener('resize', updateOverlay);
     (container as any)._annotatorMounted = false;
   };
   overlay.appendChild(closeBtn);
@@ -124,44 +186,24 @@ export function openAnnotator(containerOrId: HTMLElement | string) {
   });
   overlay.appendChild(wrapper);
 
-  // render whiteboard
   waitForAppStore()
     .then(store => {
       ReactDOM.render(
-        <Provider store={store}>
-          <Excalidraw
-            isCollaborating={true}
-            theme="light"
-            initialData={{
-              elements: [],
-              appState: {
-                viewBackgroundColor: 'transparent',
-                offsetLeft: 0,
-                offsetTop: 0,
-                zoom: { value: 1 } as any
-              }
-            }}
-            UIOptions={WHITEBOARD_UI_OPTIONS}
-          />
-        </Provider>,
+        <WhiteboardCollaborator store={store} />,
         wrapper
       );
 
-      // === POST-RENDER FIX: hoist static canvas out of its wrapper ===
-      // Observe changes in the wrapper DOM to catch when the canvas gets mounted
       const observer = new MutationObserver(() => {
         const canvasWrapper = wrapper.querySelector('.excalidraw__canvas-wrapper');
         const staticCanvas = canvasWrapper?.querySelector('canvas.excalidraw__canvas.static');
 
         if (canvasWrapper && staticCanvas && canvasWrapper.parentElement) {
-          // Move static canvas out and remove wrapper
           canvasWrapper.parentElement.insertBefore(staticCanvas, canvasWrapper);
           canvasWrapper.remove();
-          observer.disconnect(); // Stop observing once done
+          observer.disconnect();
         }
       });
 
-      // Start observing for DOM changes inside wrapper
       observer.observe(wrapper, {
         childList: true,
         subtree: true,
