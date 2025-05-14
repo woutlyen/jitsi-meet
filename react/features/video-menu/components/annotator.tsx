@@ -58,6 +58,18 @@ function WhiteboardCollaborator({ store }: { store: any }) {
     const handleMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
+
+        if (data.type === 'init') {
+          // Received initial full scene from server
+          for (const el of data.elements) {
+            elementMapRef.current.set(el.id, el);
+          }
+
+          excalRef.current?.updateScene({
+            elements: data.elements,
+          });
+        }
+
         if (data.type === 'sync' && data.clientId !== clientId) {
           for (const incomingEl of data.elements) {
             const existing = elementMapRef.current.get(incomingEl.id);
