@@ -117,12 +117,13 @@ function WhiteboardCollaborator({ store }: { store: any }) {
           }
         }}
         UIOptions={WHITEBOARD_UI_OPTIONS}
-        /*onPointerUp={(activePointer, elements) => {
-          broadcastElements(elements);
-        }}*/
-        onChange={(elements) => {
+        onPointerUp={() => {
+          const elements = excalRef.current?.getSceneElements() || [];
           broadcastElements(elements);
         }}
+        /*onChange={(elements) => {
+          broadcastElements(elements);
+        }}*/
       />
     </Provider>
   );
