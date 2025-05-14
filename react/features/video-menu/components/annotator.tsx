@@ -2,26 +2,21 @@
 declare global {
   interface Window {
     EXCALIDRAW_ASSET_PATH: string;
+    APP: any;
   }
 }
 
 const clientId = crypto.randomUUID();
-const socket = new WebSocket('ws://localhost:1234');
+const socket = new WebSocket('ws://localhost:1234'); // change if hosted
 
+// Set the asset path before importing Excalidraw
 window.EXCALIDRAW_ASSET_PATH = '/libs/dev/';
 
 import React, { useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Provider } from 'react-redux';
-import throttle from 'lodash.throttle'; // ✅ Throttle broadcast to avoid spamming
-
-import Whiteboard from '../../whiteboard/components/web/Whiteboard';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import { WHITEBOARD_UI_OPTIONS } from '../../whiteboard/constants';
-
-declare global {
-  interface Window { APP: any; }
-}
 
 function waitForAppStore(timeout = 5000): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -39,39 +34,61 @@ function waitForAppStore(timeout = 5000): Promise<any> {
   });
 }
 
+// Merge elements by ID/version
+function mergeElements(remote: any[], local: any[]): any[] {
+  const localMap = new Map(local.map((el) => [el.id, el]));
+  const merged = [...local];
+
+  for (const remoteEl of remote) {
+    const localEl = localMap.get(remoteEl.id);
+    if (!localEl || remoteEl.version > localEl.version) {
+      const index = merged.findIndex((e) => e.id === remoteEl.id);
+      if (index !== -1) {
+        merged[index] = remoteEl;
+      } else {
+        merged.push(remoteEl);
+      }
+    }
+  }
+
+  return merged;
+}
+
 function WhiteboardCollaborator({ store }: { store: any }) {
   const excalRef = useRef<any>(null);
+  const lastSentElementsRef = useRef<any[]>([]);
 
-  // ✅ Broadcast safely and throttled
-  const broadcastElements = useCallback(throttle((elements: readonly any[]) => {
-    const clonedElements = elements.map(el => ({ ...el })); // ✅ Clone to avoid readonly issues
+  const broadcastElements = useCallback((elements: readonly any[]) => {
+    const cloned = elements.map((el) => ({ ...el }));
 
-    console.log('[SEND]', clientId, clonedElements); // ✅ Logging
+    // Only broadcast if something changed
+    const hasChanged = JSON.stringify(cloned) !== JSON.stringify(lastSentElementsRef.current);
+    if (!hasChanged) return;
+
+    lastSentElementsRef.current = cloned;
+    console.log('[SEND]', clientId, cloned);
 
     const payload = {
       type: 'sync',
       clientId,
-      elements: clonedElements
+      elements: cloned
     };
 
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(payload));
     }
-  }, 100), []);
+  }, []);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
-
         if (data.type === 'sync' && data.clientId !== clientId) {
-          console.log('[RECV]', clientId, '<--', data.clientId, data.elements); // ✅ Logging
+          console.log('[RECV]', data.clientId, data.elements);
 
-          if (excalRef.current) {
-            excalRef.current.updateScene({
-              elements: data.elements.map(el => ({ ...el })) // ✅ Defensive clone
-            });
-          }
+          const current = excalRef.current?.getSceneElements() || [];
+          const merged = mergeElements(data.elements, current);
+          excalRef.current?.updateScene({ elements: merged });
         }
       } catch (e) {
         console.warn('Invalid WS message', e);
@@ -100,6 +117,9 @@ function WhiteboardCollaborator({ store }: { store: any }) {
           }
         }}
         UIOptions={WHITEBOARD_UI_OPTIONS}
+        /*onPointerUp={(activePointer, elements) => {
+          broadcastElements(elements);
+        }}*/
         onChange={(elements) => {
           broadcastElements(elements);
         }}
@@ -116,18 +136,20 @@ export function openAnnotator(containerOrId: HTMLElement | string) {
   if (!container || (container as any)._annotatorMounted) return;
   (container as any)._annotatorMounted = true;
 
+  // find the <video> inside
   const videoEl = container.querySelector('video');
   if (!videoEl) {
     console.warn('No <video> found inside container');
     return;
   }
 
+  // create overlay
   const overlay = document.createElement('div');
-  overlay.style.position = 'absolute';
-  overlay.style.pointerEvents = 'auto';
-  overlay.style.backgroundColor = 'transparent';
-  overlay.style.zIndex = '9999';
-  overlay.style.overflow = 'visible';
+  overlay.style.position       = 'absolute';
+  overlay.style.pointerEvents  = 'auto';
+  overlay.style.backgroundColor= 'transparent';
+  overlay.style.zIndex         = '9999';
+  overlay.style.overflow       = 'visible';
 
   container.appendChild(overlay);
   if (getComputedStyle(container).position === 'static') {
@@ -137,14 +159,13 @@ export function openAnnotator(containerOrId: HTMLElement | string) {
   function updateOverlay() {
     const cRect = container.getBoundingClientRect();
     const vRect = videoEl.getBoundingClientRect();
-    overlay.style.left = `${vRect.left - cRect.left}px`;
-    overlay.style.top = `${vRect.top - cRect.top}px`;
-    overlay.style.width = `${vRect.width}px`;
+    overlay.style.left   = `${vRect.left - cRect.left}px`;
+    overlay.style.top    = `${vRect.top  - cRect.top }px`;
+    overlay.style.width  = `${vRect.width}px`;
     overlay.style.height = `${vRect.height}px`;
   }
 
   updateOverlay();
-
   const ro = new ResizeObserver(updateOverlay);
   ro.observe(videoEl);
   window.addEventListener('resize', updateOverlay);
