@@ -216,7 +216,7 @@ const RemoteVideoMenuTriggerButton = ({
                             className          = { classes.triggerButton }
                             icon               = { IconEdit }
                             size               = 'small'
-                            onClick            = { () => openAnnotator(participantID) } />
+                            onClick            = { () => openAnnotator() } />
                     </>
                 )
             )}

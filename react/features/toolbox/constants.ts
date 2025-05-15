@@ -89,6 +89,7 @@ export const NATIVE_THRESHOLDS = [
  * buttons.
  */
 export const MAIN_TOOLBAR_BUTTONS_PRIORITY = [
+    'annotate',
     'microphone',
     'camera',
     'desktop',
@@ -143,6 +144,7 @@ export const SPINNER_COLOR = '#929292';
  * @type Array<string>
  */
 export const TOOLBAR_BUTTONS: ToolbarButton[] = [
+    'annotate',
     'camera',
     'chat',
     'closedcaptions',

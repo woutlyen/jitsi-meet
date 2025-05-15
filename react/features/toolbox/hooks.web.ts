@@ -72,6 +72,13 @@ import VideoSettingsButton from './components/web/VideoSettingsButton';
 import { isButtonEnabled, isDesktopShareButtonDisabled } from './functions.web';
 import { ICustomToolbarButton, IToolboxButton, ToolbarButton } from './types';
 
+import AnnotateButton from './components/web/AnnotateButton';
+
+const annotate = {
+    key: 'annotate',
+    Content: AnnotateButton,
+    group: 0  // choose whichever overflow-group is appropriate
+};
 
 const microphone = {
     key: 'microphone',
@@ -294,6 +301,7 @@ export function useToolboxButtons(
     const _help = useHelpButton();
 
     const buttons: { [key in ToolbarButton]?: IToolboxButton; } = {
+        annotate,
         microphone,
         camera,
         profile,
