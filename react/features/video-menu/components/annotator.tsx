@@ -2,6 +2,7 @@
 // @ts-nocheck
   
   // annotator.tsx
+
   declare global {
     interface Window {
       EXCALIDRAW_ASSET_PATH: string;
@@ -10,11 +11,7 @@
   }
 
   const clientId = crypto.randomUUID();
-  //const socket = new WebSocket('ws://localhost:1234'); // change if hosted
   const socket: WebSocket = new WebSocket('wss://extended.uksouth.cloudapp.azure.com:1234');
-
-  // Set the asset path before importing Excalidraw
-  // window.EXCALIDRAW_ASSET_PATH = '/libs/dev/';
   window.EXCALIDRAW_ASSET_PATH = 'libs/';
 
   import React, { useRef, useEffect, useCallback } from 'react';
@@ -42,10 +39,10 @@
   function WhiteboardCollaborator({ store }: { store: any }) {
     const excalRef = useRef<any>(null);
     const elementMapRef = useRef<Map<string, any>>(new Map());
+    const prevSentVersions = useRef<Map<string, number>>(new Map());
+    const sentDeleted = useRef<Set<string>>(new Set());
     const containerRef = useRef<HTMLDivElement>(null);
     const [, forceUpdate] = React.useState({});
-
-    //const userName = "User-" + clientId.slice(0, 4); // Customize naming if needed
 
     const getUserName = () => {
       const el = document.getElementById('localDisplayName');
@@ -91,62 +88,34 @@
       ));
     };
 
-    const broadcastElements = useCallback((newElements: readonly any[]) => {
-      for (const el of newElements) {
-        elementMapRef.current.set(el.id, el);
-      }
+    // Send only new or updated or newly deleted elements
+    const sendDeltas = useCallback(() => {
+      const deltas: any[] = [];
+      elementMapRef.current.forEach(el => {
+        const prevVer = prevSentVersions.current.get(el.id) ?? -1;
+        const wasDeleted = sentDeleted.current.has(el.id);
+        if (el.isDeleted) {
+          if (!wasDeleted) {
+            deltas.push(el);
+            sentDeleted.current.add(el.id);
+            prevSentVersions.current.set(el.id, el.version);
+          }
+        } else if (el.version > prevVer) {
+          deltas.push(el);
+          prevSentVersions.current.set(el.id, el.version);
+        }
+      });
 
-      const payload = {
-        type: 'sync',
-        clientId,
-        elements: Array.from(elementMapRef.current.values())
-      };
-
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify(payload));
+      if (deltas.length > 0 && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'sync', clientId, elements: deltas }));
       }
     }, []);
 
-    // Ref to store the previous count of deleted elements
-    const deletedCountRef = useRef(0);
-
-    // The handleChange function will be updated to check for changes in the deleted count
-    const handleChange = useCallback(
-      (elements: readonly any[], appState: any) => {
-        // Count how many elements are deleted
-        const deletedElements = elements.filter(el => el.isDeleted);
-        const currentDeletedCount = deletedElements.length;
-
-        // Only broadcast if there are more deleted elements than the previous time
-        if (currentDeletedCount > deletedCountRef.current) {
-          // Update the elementMapRef with the new element state
-          elements.forEach((el) => {
-            if (!el.isDeleted) {
-              // If element is not deleted, we either add or update it
-              elementMapRef.current.set(el.id, el);
-            } else {
-              // If element is deleted, we mark it and don't add it to the map
-              elementMapRef.current.set(el.id, { ...el, isDeleted: true });
-            }
-          });
-
-          // Broadcast the updated state to other clients
-          const payload = {
-            type: 'sync',
-            clientId,
-            elements: Array.from(elementMapRef.current.values()),
-          };
-
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(payload));
-          }
-
-          // Update the previous count of deleted elements
-          deletedCountRef.current = currentDeletedCount;
-        }
-      },
-      []
-    );
+    // On change, update local map and send deltas
+    const handleChange = useCallback((elements: readonly any[]) => {
+      elements.forEach(el => elementMapRef.current.set(el.id, el));
+      sendDeltas();
+    }, [sendDeltas]);
 
     const broadcastCursor = useCallback((x: number, y: number) => {
       const payload = {
@@ -210,26 +179,29 @@
           }
 
           if (data.type === 'init') {
-            for (const el of data.elements) {
+            elementMapRef.current.clear();
+            data.elements.forEach((el: any) => {
               elementMapRef.current.set(el.id, el);
-            }
-
-            excalRef.current?.updateScene({
-              elements: data.elements,
+              prevSentVersions.current.set(el.id, el.version);
+              if (el.isDeleted) sentDeleted.current.add(el.id);
             });
+            excalRef.current?.updateScene({ elements: Array.from(elementMapRef.current.values()) });
           }
 
           if (data.type === 'sync' && data.clientId !== clientId) {
-            for (const incomingEl of data.elements) {
-              const existing = elementMapRef.current.get(incomingEl.id);
-
-              if (!existing || incomingEl.version > existing.version) {
-                elementMapRef.current.set(incomingEl.id, incomingEl);
+            let changed = false;
+            data.elements.forEach((inc: any) => {
+              const exist = elementMapRef.current.get(inc.id);
+              if (!exist || inc.version > exist.version) {
+                elementMapRef.current.set(inc.id, inc);
+                prevSentVersions.current.set(inc.id, inc.version);
+                if (inc.isDeleted) sentDeleted.current.add(inc.id);
+                changed = true;
               }
+            });
+            if (changed) {
+              excalRef.current?.updateScene({ elements: Array.from(elementMapRef.current.values()) });
             }
-
-            const mergedElements = Array.from(elementMapRef.current.values());
-            excalRef.current?.updateScene({ elements: mergedElements });
 
           }
         } catch (e) {
@@ -241,6 +213,22 @@
       return () => socket.removeEventListener('message', handleMessage);
     }, []);
 
+    const broadcastElements = useCallback((newElements: readonly any[]) => {
+      for (const el of newElements) {
+        elementMapRef.current.set(el.id, el);
+      }
+
+      const payload = {
+        type: 'sync',
+        clientId,
+        elements: Array.from(elementMapRef.current.values())
+      };
+
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(payload));
+      }
+    }, []);
+    
     useEffect(() => {
       const timeout = setTimeout(() => {
         const elements = excalRef.current?.getSceneElements() || [];
@@ -248,26 +236,6 @@
       }, 1000);
       return () => clearTimeout(timeout);
     }, []);
-
-    const broadcastInterval = useRef<NodeJS.Timeout | null>(null);
-
-    const handlePointerDown = () => {
-      if (broadcastInterval.current) return;
-      broadcastInterval.current = setInterval(() => {
-        const elements = excalRef.current?.getSceneElements() || [];
-        broadcastElements(elements);
-      }, 100);
-    };
-
-    const handlePointerUp = () => {
-      if (broadcastInterval.current) {
-        clearInterval(broadcastInterval.current);
-        broadcastInterval.current = null;
-      }
-
-      const elements = excalRef.current?.getSceneElements() || [];
-      broadcastElements(elements);
-    };
 
     return (
       <Provider store={store}>
@@ -288,15 +256,6 @@
               },
             }}
             UIOptions={WHITEBOARD_UI_OPTIONS}
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
-            onPaste={(data, event) => {
-              requestAnimationFrame(() => {
-                const elements = excalRef.current?.getSceneElements() || [];
-                broadcastElements(elements);
-              });
-              return true;
-            }}
             onChange={handleChange} // Use the handleChange to track deletions
           />
           {renderRemoteCursors()}
